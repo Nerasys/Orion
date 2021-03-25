@@ -1,17 +1,21 @@
-﻿using System.Collections;
+﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using PlayFab;
 using PlayFab.ClientModels;
+using PlayFab.CloudScriptModels;
 using UnityEngine;
 
 public class PlayfabInterface : MonoBehaviour
 {
-    private static PlayfabInterface m_instance = null;
+    private static PlayfabInterface m_instance;
     public System.Action OnConnexion;
 
     private string temp_mail;
     private string temp_username;
     private string idPlayfab;
+
+    private bool pendingRequest = false;
 
 
 
@@ -22,26 +26,26 @@ public class PlayfabInterface : MonoBehaviour
         {
             if (m_instance == null)
             {
-                m_instance = new PlayfabInterface();
+                m_instance = new GameObject("PlayfabInterface").AddComponent<PlayfabInterface>();
             }
 
             return m_instance;
+
         }
         private set { }
     }
 
     private void Awake()
     {
-        if (instance != null)
+        if (m_instance == null)
         {
-            Destroy(gameObject);
-        }
-        else
-        {
-            instance = this;
+            m_instance = this;
+            DontDestroyOnLoad(gameObject);
         }
 
-        InitPlayfab("C08BA");
+
+        InitPlayfab("5357B");
+        StartCoroutine("WaitEndOfRequest");
     }
 
     private void InitPlayfab(string id)
@@ -83,10 +87,13 @@ public class PlayfabInterface : MonoBehaviour
 
     internal void UpdateUsername(string _username)
     {
-        var updateRequest = new UpdateUserTitleDisplayNameRequest();
-        updateRequest.DisplayName = _username;
-        GameManager.Instance.localAccountData.SetUsername(_username);
-        PlayFabClientAPI.UpdateUserTitleDisplayName(updateRequest, OnUpdateNameSuccess, OnUpdateNameFailure);
+        pendingRequest = true;
+        PlayFabClientAPI.UpdateUserTitleDisplayName(new UpdateUserTitleDisplayNameRequest
+        {
+            DisplayName = _username
+        },
+     result2 => { pendingRequest = false; },
+      error => { Debug.LogError(error.GenerateErrorReport()); });
     }
     internal void UpdateContactEmail(string _mail)
     {
@@ -106,6 +113,7 @@ public class PlayfabInterface : MonoBehaviour
 
     internal void GetCurrencies()
     {
+        pendingRequest = true;
         PlayFabClientAPI.GetUserInventory(new GetUserInventoryRequest(),
                   result =>
                   {
@@ -113,12 +121,64 @@ public class PlayfabInterface : MonoBehaviour
                       {
                           SetCurrencies(langage.Key, langage.Value);
                       }
-                      UIManager.Instance.ActualizeData();
-                      SceneManager.Instance.LoadingScene(SceneManager.SceneType.MENU);
+                      pendingRequest = false;
                   },
                    error => { Debug.LogError(error.GenerateErrorReport()); });
     }
 
+    internal void GetItemsCalatogs()
+    {
+        pendingRequest = true;
+        var updateRequest = new GetCatalogItemsRequest();
+        updateRequest.CatalogVersion = "Items";
+        //  PlayFabClientAPI.GetCatalogItems(new GetCatalogItemsRequest(), ItemsList, OnRegisterFailure);
+    }
+
+
+    //AZUR FUNCTION LATER
+    public void SetStatisticsPlayer()
+    {
+        pendingRequest = true;
+        PlayFabClientAPI.UpdatePlayerStatistics(new UpdatePlayerStatisticsRequest
+        {
+            Statistics = new List<StatisticUpdate> {
+        new StatisticUpdate { StatisticName = "PlayerLevel", Value = 1 }
+         }
+        },
+        result2 =>
+        {
+            pendingRequest = false;
+            Debug.Log("User statistics updated");
+        },
+        error => { Debug.LogError(error.GenerateErrorReport()); });
+
+    }
+
+    public void GetStatisticsPlayer()
+    {
+        pendingRequest = true;
+        PlayFabClientAPI.GetPlayerStatistics(new GetPlayerStatisticsRequest(), OnGetStatisticsPlayer, error => Debug.LogError(error.GenerateErrorReport()));
+    }
+
+    //CHECK LE CLOUD et return la bonne valeur
+    void OnGetStatisticsPlayer(GetPlayerStatisticsResult result)
+    {
+        Debug.Log("Received the following Statistics:");
+        foreach (var eachStat in result.Statistics)
+        {
+            //Debug.Log("Statistic (" + eachStat.StatisticName + "): " + eachStat.Value);
+            switch (eachStat.StatisticName)
+            {
+                case "PlayerLevel":
+                    Debug.LogError("here" + eachStat.Value);
+                    GameManager.Instance.localAccountData.level = eachStat.Value;
+                    break;
+            }
+        }
+
+        pendingRequest = false;
+
+    }
 
     #endregion
     // Start is called before the first frame update
@@ -136,15 +196,9 @@ public class PlayfabInterface : MonoBehaviour
         GameManager.Instance.localAccountData.SetUsername(temp_mail);
         GameManager.Instance.localAccountData.SetUsername(result.Username);
         GameManager.Instance.localAccountData.SetID(result.PlayFabId);
-        var updateRequest = new UpdateUserTitleDisplayNameRequest();
-        updateRequest.DisplayName = GameManager.Instance.localAccountData.GetUsername();
-        PlayFabClientAPI.UpdateUserTitleDisplayName(updateRequest, OnUpdateNameSuccess, OnUpdateNameFailure);
-
-
-        // UpdateAccountData();
-
+        SetStatisticsPlayer();
+        UpdatePlayerData();
     }
-
     void OnRegisterFailure(PlayFabError error)
     {
         Debug.LogError("Erreur d'Enregistement");
@@ -155,6 +209,7 @@ public class PlayfabInterface : MonoBehaviour
 
     void OnLoginSuccess(LoginResult login)
     {
+        Debug.LogError("test");
         GameManager.Instance.localAccountData.idPlayfab = login.PlayFabId;
         PlayFabClientAPI.GetPlayerProfile(new GetPlayerProfileRequest()
         {
@@ -193,11 +248,21 @@ public class PlayfabInterface : MonoBehaviour
 
     }
 
-
-    void OnUpdateNameSuccess(UpdateUserTitleDisplayNameResult result)
+    private void UpdatePlayerData()
     {
+        UpdateUsername(GameManager.Instance.localAccountData.GetUsername());
         GetCurrencies();
+        GetStatisticsPlayer();
+        UIManager.Instance.ActualizeData();
+        SceneManager.Instance.LoadingScene(SceneManager.SceneType.MENU);
 
+    }
+    IEnumerator WaitEndOfRequest()
+    {
+        while (pendingRequest)
+        {
+            yield return new WaitForSeconds(0.2f);
+        }
     }
 
     void OnUpdateNameFailure(PlayFabError error)
@@ -231,12 +296,32 @@ public class PlayfabInterface : MonoBehaviour
             GameManager.Instance.localAccountData.energy = value;
     }
 
+
     private void SetData(GetPlayerProfileResult result)
     {
         GameManager.instance.localAccountData.SetUsername(result.PlayerProfile.DisplayName);
-        GetCurrencies();
+        UpdatePlayerData();
     }
-
+    private void SetLevelAzur()
+    {
+        PlayFabCloudScriptAPI.ExecuteFunction(new ExecuteFunctionRequest()
+        {
+            Entity = new PlayFab.CloudScriptModels.EntityKey()
+            {
+                Id = PlayFabSettings.staticPlayer.EntityId, //Get this from when you logged in,
+                Type = PlayFabSettings.staticPlayer.EntityType, //Get this from when you logged in
+            },
+            FunctionName = "SetDataRegister", //This should be the name of your Azure Function that you created.
+                                              //FunctionParameter = new Dictionary<string, object>() { { "inputValue", "Test" } }, //This is the data that you would want to pass into your function.
+            GeneratePlayStreamEvent = false //Set this to true if you would like this call to show up in PlayStream
+        }, (ExecuteFunctionResult result2) =>
+        {
+            Debug.Log("SET LEVEL TO " + result2.FunctionResult.ToString());
+        }, (PlayFabError error) =>
+        {
+            Debug.Log($"Opps Something went wrong: {error.GenerateErrorReport()}");
+        });
+    }
     #endregion
 
 }

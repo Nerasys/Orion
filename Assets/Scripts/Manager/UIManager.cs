@@ -66,10 +66,12 @@ public class UIManager : MonoBehaviour
 
     public void ActualizeData()
     {
+        levelText.text ="Level "+GameManager.Instance.localAccountData.level.ToString();
         nameText.text = GameManager.Instance.localAccountData.GetUsername();
         goldText.text = GameManager.Instance.localAccountData.gold.ToString();
         gemsText.text = GameManager.Instance.localAccountData.gems.ToString();
         energyText.text = GameManager.Instance.localAccountData.energy.ToString();
+        
     }
 
 

@@ -24,6 +24,8 @@ public class GameManager : MonoBehaviour
     }
 
     public AccountData localAccountData;
+    public List<Items> itemsList;
+    public List<Items> itemsConstructionList;
     void Awake()
     {
         if (instance != null)
@@ -36,6 +38,7 @@ public class GameManager : MonoBehaviour
             DontDestroyOnLoad(instance);
         }
     }
+      
 
     // Update is called once per frame
     void Update()
